@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Overflow Lab: how integers wrap around</title>
+<style>
+:root{--bg:#eef2ef;--panel:#fbfdfb;--ink:#1c2b33;--mute:#5d6d75;--line:#c9d5cf;--teal:#0f7b6c;--tealbg:#d6ece7;--amber:#c27a00;--amberbg:#fbe8c4;--bit0:#e3eae6;--bit1:#1c2b33;--bit1t:#fbfdfb;--red:#b3341f;--redbg:#f6d9d3;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10181c;--panel:#18242a;--ink:#e6eeea;--mute:#93a5ab;--line:#2c3d44;--teal:#4cc3ae;--tealbg:#16423b;--amber:#f0b440;--amberbg:#47360f;--bit0:#22323a;--bit1:#e6eeea;--bit1t:#10181c;--red:#ff8c75;--redbg:#4a231b}}
+:root[data-theme="dark"]{--bg:#10181c;--panel:#18242a;--ink:#e6eeea;--mute:#93a5ab;--line:#2c3d44;--teal:#4cc3ae;--tealbg:#16423b;--amber:#f0b440;--amberbg:#47360f;--bit0:#22323a;--bit1:#e6eeea;--bit1t:#10181c;--red:#ff8c75;--redbg:#4a231b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "IBM Plex Sans","Segoe UI",system-ui,sans-serif}
+main{max-width:920px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.9rem;margin:0 0 4px;letter-spacing:-.02em}
+h2{font-size:1.05rem;margin:0 0 10px}
+p{margin:0 0 10px;max-width:70ch}
+.sub{color:var(--mute);margin-bottom:18px}
+.tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.tabs button{font:inherit;padding:8px 14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:3px;font-size:.85rem;color:var(--mute)}
+select,input[type=number],input[type=text]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:90px}
+input[type=range]{width:100%;accent-color:var(--teal)}
+button.sm{font:inherit;font-size:.85rem;padding:6px 10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;cursor:pointer}
+:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{font:inherit;padding:6px 12px;border:0;background:var(--bg);color:var(--ink);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--teal);color:#fff}
+.grid{display:grid;grid-template-columns:1fr 250px;gap:14px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.bitrow{margin-bottom:12px}
+.bitrow .cap{display:flex;justify-content:space-between;font-size:.85rem;color:var(--mute);margin-bottom:3px;gap:8px;flex-wrap:wrap}
+.bits{display:grid;gap:3px;grid-template-columns:repeat(var(--cols),1fr)}
+.bit{aspect-ratio:1/1.1;display:flex;align-items:center;justify-content:center;font:600 .9rem ui-monospace,Menlo,monospace;border-radius:4px;background:var(--bit0);color:var(--mute);border:0;padding:0}
+.bit.on{background:var(--bit1);color:var(--bit1t)}
+.bit.sign{outline:2px solid var(--amber);outline-offset:1px}
+button.bit{cursor:pointer}
+.result{border-left:5px solid var(--teal);background:var(--tealbg);padding:10px 12px;border-radius:6px}
+.result.bad{border-color:var(--amber);background:var(--amberbg)}
+.result.err{border-color:var(--red);background:var(--redbg)}
+.big{font:700 1.15rem ui-monospace,Menlo,monospace}
+.kv{display:flex;gap:18px;flex-wrap:wrap;margin:8px 0}
+.kv div{font-size:.85rem;color:var(--mute)}.kv b{display:block;color:var(--ink);font:600 1rem ui-monospace,Menlo,monospace}
+svg{width:100%;height:auto;display:block}
+.bar{height:26px;border-radius:5px;background:var(--bit0);position:relative;margin:4px 0 12px;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;display:block}
+.hide{display:none}
+.note{font-size:.85rem;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>Overflow Lab</h1>
+<p class="sub">A computer integer has a fixed number of bits, so it can only count so high. Past the top, it wraps around like a car odometer. Change the numbers and watch where the wrap happens.</p>
+
+<div class="tabs" role="tablist">
+  <button role="tab" id="t1" aria-selected="true">1. Wrap-around arithmetic</button>
+  <button role="tab" id="t2" aria-selected="false">2. Overflow in memory sizing</button>
+</div>
+
+<!-- TAB 1 -->
+<section id="p1">
+  <div class="panel">
+    <div class="row">
+      <label>Bit width<select id="w"><option>4</option><option selected>8</option><option>16</option><option>32</option></select></label>
+      <label>Interpretation<div class="seg"><button id="sU" aria-pressed="true">Unsigned</button><button id="sS" aria-pressed="false">Signed (two's complement)</button></div></label>
+      <label>Operation<select id="op"><option value="+">A + B</option><option value="-">A − B</option><option value="*">A × B</option></select></label>
+      <button class="sm" id="pre">Try an overflow</button>
+    </div>
+    <p class="note" id="range" style="margin:10px 0 0"></p>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="row" style="margin-bottom:8px">
+        <label style="flex:1;min-width:200px">A (drag, type, or click bits below)<input type="range" id="aS"></label>
+        <label>A<input type="number" id="aN"></label>
+        <label>B<input type="number" id="bN"></label>
+      </div>
+      <div class="bitrow"><div class="cap"><span>A in binary <span class="note">(click a bit to flip it)</span></span><span id="aD"></span></div><div class="bits" id="aB"></div></div>
+      <div class="bitrow"><div class="cap"><span>B in binary</span><span id="bD"></span></div><div class="bits" id="bB"></div></div>
+      <div class="bitrow"><div class="cap"><span>Stored result: only the lowest <span class="nb"></span> bits survive</span><span id="rD"></span></div><div class="bits" id="rB"></div></div>
+      <div class="result" id="msg"></div>
+      <div class="kv" id="kv"></div>
+    </div>
+    <div class="panel">
+      <h2>Number ring</h2>
+      <svg viewBox="0 0 220 220" id="ring" role="img" aria-label="Ring of all values for this bit width"></svg>
+      <p class="note" id="ringNote" style="margin-top:6px"></p>
+    </div>
+  </div>
+</section>
+
+<!-- TAB 2 -->
+<section id="p2" class="hide">
+  <div class="panel">
+    <p>Programs often compute a buffer size as <b>count × element size</b>. If that multiplication wraps, the program reserves a tiny buffer but still plans to handle <i>count</i> items. This tab is a pure calculator: it simulates the arithmetic only and touches no memory.</p>
+    <div class="row">
+      <label>Item count<input type="number" id="cN" min="0" value="4097"></label>
+      <label>Bytes per item<input type="number" id="zN" min="1" value="16"></label>
+      <label>Size variable<select id="sw"><option value="8">8-bit</option><option value="16" selected>16-bit</option><option value="32">32-bit</option></select></label>
+      <label>Safety check<div class="seg"><button id="gOff" aria-pressed="true">Off</button><button id="gOn" aria-pressed="false">On</button></div></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="sm" data-c="4097" data-z="16" data-w="16">16-bit example</button>
+      <button class="sm" data-c="1073741825" data-z="4" data-w="32">32-bit example</button>
+      <button class="sm" data-c="1000" data-z="16" data-w="16">No overflow</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div id="m2"></div>
+  </div>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let n=8,signed=false,a=200n,b=100n,op='+';
+const M=()=>1n<<BigInt(n), MIN=()=>signed?-(M()/2n):0n, MAX=()=>signed?M()/2n-1n:M()-1n;
+const wrap=x=>{let m=((x%M())+M())%M();return signed&&m>=M()/2n?m-M():m};
+const uBits=x=>((x%M())+M())%M();
+const interp=u=>signed&&u>=M()/2n?u-M():u;
+const clamp=x=>x<MIN()?MIN():x>MAX()?MAX():x;
+const fmt=x=>x.toString();
+const parse=s=>{try{return s===''?0n:BigInt(s)}catch(e){return 0n}};
+
+function drawBits(el,x,clickable){
+  const u=uBits(x),cols=n<=16?n:16;
+  el.style.setProperty('--cols',cols);
+  el.innerHTML='';
+  for(let i=0;i<n;i++){
+    const on=(u>>BigInt(n-1-i))&1n;
+    const e=document.createElement(clickable?'button':'div');
+    e.className='bit'+(on?' on':'')+(signed&&i===0?' sign':'');
+    e.textContent=on?'1':'0';
+    if(clickable){e.title='Flip bit '+(n-1-i);e.onclick=()=>{a=interp(u^(1n<<BigInt(n-1-i)));render()}}
+    el.appendChild(e);
+  }
+}
+const hex=x=>'0x'+uBits(x).toString(16).toUpperCase().padStart(Math.ceil(n/4),'0');
+
+function ringPt(v,r){const t=Number((v-MIN())*10000n/M())/10000*2*Math.PI;return[110+r*Math.sin(t),110-r*Math.cos(t)]}
+
+function render(){
+  document.querySelectorAll('.nb').forEach(e=>e.textContent=n);
+  $('sU').setAttribute('aria-pressed',!signed);$('sS').setAttribute('aria-pressed',signed);
+  $('range').textContent='A '+n+'-bit '+(signed?'signed':'unsigned')+' integer holds '+fmt(MIN())+' to '+fmt(MAX())+' ('+fmt(M())+' possible values).';
+  a=clamp(a);b=clamp(b);
+  const s=$('aS');s.min=Number(MIN());s.max=Number(MAX());
+  if(document.activeElement!==s)s.value=Number(a);
+  if(document.activeElement!==$('aN'))$('aN').value=fmt(a);
+  if(document.activeElement!==$('bN'))$('bN').value=fmt(b);
+  $('aN').min=$('bN').min=Number(MIN());$('aN').max=$('bN').max=Number(MAX());
+  const t=op==='+'?a+b:op==='-'?a-b:a*b, r=wrap(t), ov=t!==r;
+  drawBits($('aB'),a,true);drawBits($('bB'),b,false);drawBits($('rB'),r,false);
+  $('aD').textContent=fmt(a)+'  '+hex(a);$('bD').textContent=fmt(b)+'  '+hex(b);$('rD').textContent=fmt(r)+'  '+hex(r);
+  const sym=op==='*'?'×':op==='-'?'−':'+';
+  const m=$('msg');m.className='result'+(ov?' bad':'');
+  if(ov){
+    const dir=t>MAX()?'above the maximum '+fmt(MAX()):'below the minimum '+fmt(MIN());
+    m.innerHTML='<b>Overflow.</b> The true answer <span class="big">'+fmt(a)+' '+sym+' '+fmt(b)+' = '+fmt(t)+'</span> is '+dir+', so it does not fit. The hardware keeps only the low '+n+' bits and stores <span class="big">'+fmt(r)+'</span>. The difference is '+fmt((t-r)/M())+' × '+fmt(M())+', one full lap of the ring per '+fmt(M())+'.';
+  }else{
+    m.innerHTML='<b>No overflow.</b> The true answer <span class="big">'+fmt(t)+'</span> fits in '+n+' bits, so the stored value is correct.';
+  }
+  // same bits, other reading
+  const u=uBits(r), asU=u, saveS=signed; signed=true;const asS=interp(u);signed=saveS;
+  const other=signed?'As unsigned the same bits read':'As signed the same bits read';
+  $('kv').innerHTML='<div>True result<b>'+fmt(t)+'</b></div><div>Stored result<b>'+fmt(r)+'</b></div><div>Binary<b>'+u.toString(2).padStart(n,'0').replace(/(.{4})(?=.)/g,'$1 ')+'</b></div><div>'+other+'<b>'+fmt(signed?asU:asS)+'</b></div>';
+  // ring
+  const R=82;let g='<circle cx="110" cy="110" r="'+R+'" fill="none" stroke="var(--line)" stroke-width="14"/>';
+  const [sx,sy]=[110,110-R-14];
+  g+='<line x1="110" y1="'+(110-R-12)+'" x2="110" y2="'+(110-R+12)+'" stroke="var(--red)" stroke-width="3"/>';
+  g+='<text x="110" y="16" text-anchor="middle" font-size="10" fill="var(--red)">seam: '+fmt(MAX())+' → '+fmt(MIN())+'</text>';
+  const [ax,ay]=ringPt(a,R);
+  if(op!=='*'){
+    const d=op==='+'?b:-b;
+    const th=Number(d)/Number(M())*360, a0=Number((a-MIN())*10000n/M())/10000*360;
+    const pt=deg=>[110+R*Math.sin(deg*Math.PI/180),110-R*Math.cos(deg*Math.PI/180)];
+    const [p0x,p0y]=pt(a0),[p1x,p1y]=pt(a0+th);
+    if(Math.abs(th)>0.3)g+='<path d="M'+p0x+' '+p0y+' A'+R+' '+R+' 0 '+(Math.abs(th)>180?1:0)+' '+(th>0?1:0)+' '+p1x+' '+p1y+'" fill="none" stroke="'+(ov?'var(--amber)':'var(--teal)')+'" stroke-width="6" stroke-linecap="round"/>';
+  }
+  const [rx,ry]=ringPt(r,R);
+  g+='<circle cx="'+ax+'" cy="'+ay+'" r="7" fill="var(--ink)"/><text x="'+ax+'" y="'+(ay+3.5)+'" text-anchor="middle" font-size="9" fill="var(--bg)" font-weight="700">A</text>';
+  g+='<circle cx="'+rx+'" cy="'+ry+'" r="7" fill="'+(ov?'var(--amber)':'var(--teal)')+'" stroke="var(--panel)" stroke-width="2"/><text x="'+rx+'" y="'+(ry+3.5)+'" text-anchor="middle" font-size="9" fill="#fff" font-weight="700">R</text>';
+  g+='<text x="110" y="106" text-anchor="middle" font-size="11" fill="var(--mute)">'+n+'-bit</text><text x="110" y="122" text-anchor="middle" font-size="11" fill="var(--mute)">'+(signed?'signed':'unsigned')+'</text>';
+  $('ring').innerHTML=g;
+  $('ringNote').textContent=op==='*'?'Multiplication jumps rather than walks, so only A and the stored result R are marked.':'The arc walks from A by '+(op==='+'?'+':'−')+'B. If it crosses the red seam, the value wraps and R lands on the far side.';
+}
+
+$('w').onchange=e=>{n=+e.target.value;a=wrap(a);b=wrap(b);render()};
+$('sU').onclick=()=>{const u=uBits(a),ub=uBits(b);signed=false;a=u;b=ub;render()};
+$('sS').onclick=()=>{const u=uBits(a),ub=uBits(b);signed=true;a=interp(u);b=interp(ub);render()};
+$('op').onchange=e=>{op=e.target.value;render()};
+$('aS').oninput=e=>{a=BigInt(e.target.value);render()};
+$('aN').oninput=e=>{a=parse(e.target.value);render()};
+$('bN').oninput=e=>{b=parse(e.target.value);render()};
+$('aN').onchange=$('bN').onchange=()=>render();
+$('pre').onclick=()=>{
+  op=$('op').value='+';
+  a=MAX()-3n;b=10n>MAX()?MAX():10n;render();
+};
+
+// ---- Tab 2
+let guard=false;
+function render2(){
+  const w=+$('sw').value, Mx=1n<<BigInt(w), max=Mx-1n;
+  const c=parse($('cN').value), z=parse($('zN').value)||1n;
+  const need=c*z, alloc=need%Mx, ov=need>max;
+  $('gOff').setAttribute('aria-pressed',!guard);$('gOn').setAttribute('aria-pressed',guard);
+  const blocked=guard&&c>max/z;
+  const top=need>alloc?need:alloc, pct=x=>Math.max(1.5,Number(x*1000n/(top||1n))/10);
+  let h='<h2>Step by step ('+w+'-bit size variable, max '+fmt(max)+')</h2>';
+  h+='<p>Intended bytes: <span class="big">'+fmt(c)+' × '+fmt(z)+' = '+fmt(need)+'</span></p>';
+  if(guard){
+    h+='<p class="note">Check: is <code>count &gt; MAX ÷ size</code>? '+fmt(c)+' &gt; '+fmt(max/z)+' is <b>'+(blocked?'true':'false')+'</b>.</p>';
+  }
+  if(blocked){
+    h+='<div class="result"><b>Request rejected before multiplying.</b> The check proves count × size would not fit, so the program returns an error instead of reserving a wrong-sized buffer. Checking first is the standard fix.</div>';
+  }else{
+    h+='<p>Size the program actually reserves: <span class="big">'+fmt(alloc)+' bytes</span>'+(ov?' <span class="note">('+fmt(need)+' mod '+fmt(Mx)+')</span>':'')+'</p>';
+    h+='<div class="note">Bytes reserved</div><div class="bar"><i style="width:'+pct(alloc)+'%;background:var(--teal)"></i></div>';
+    h+='<div class="note">Bytes the loop expects to fill ('+fmt(c)+' items)</div><div class="bar"><i style="width:'+pct(need)+'%;background:'+(ov?'var(--amber)':'var(--teal)')+'"></i>'+(ov?'<i style="width:'+pct(alloc)+'%;background:var(--teal)"></i>':'')+'</div>';
+    if(ov)h+='<div class="result err"><b>Mismatch.</b> The program reserved '+fmt(alloc)+' bytes but plans to process '+fmt(need)+'. That is '+fmt(need-alloc)+' bytes beyond the buffer, an out-of-bounds write bug. The bad size is silent: no error appears at the multiplication.</div><p class="note" style="margin-top:8px">Turn the safety check on to see how it stops this.</p>';
+    else h+='<div class="result"><b>Sizes match.</b> The product fits in '+w+' bits, so the reserved size equals the needed size.</div>';
+  }
+  $('m2').innerHTML=h;
+}
+$('cN').oninput=$('zN').oninput=$('sw').onchange=render2;
+$('gOff').onclick=()=>{guard=false;render2()};$('gOn').onclick=()=>{guard=true;render2()};
+document.querySelectorAll('[data-c]').forEach(bt=>bt.onclick=()=>{$('cN').value=bt.dataset.c;$('zN').value=bt.dataset.z;$('sw').value=bt.dataset.w;render2()});
+
+// tabs
+function tab(i){$('p1').classList.toggle('hide',i!==1);$('p2').classList.toggle('hide',i!==2);$('t1').setAttribute('aria-selected',i===1);$('t2').setAttribute('aria-selected',i===2);if(i===2)render2();else render()}
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+render();
+</script>
+</body>
+</html>
